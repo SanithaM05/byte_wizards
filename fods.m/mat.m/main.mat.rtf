@@ -1,0 +1,230 @@
+{\rtf1\ansi\ansicpg1252\cocoartf2821
+\cocoatextscaling0\cocoaplatform0{\fonttbl\f0\fmodern\fcharset0 Courier;}
+{\colortbl;\red255\green255\blue255;}
+{\*\expandedcolortbl;;}
+\paperw11900\paperh16840\margl1440\margr1440\vieww29200\viewh18400\viewkind0
+\pard\tx560\tx1120\tx1680\tx2240\tx2800\tx3360\tx3920\tx4480\tx5040\tx5600\tx6160\tx6720\pardirnatural\partightenfactor0
+
+\f0\fs36 \cf0 emotion to stress mapping\
+
+\fs20 \
+clc; clear; close all;\
+\
+% Input folders containing emotion labels\
+inputFolders = \{'fer2013/train', 'fer2013/test'\};  % Adjust path as needed\
+\
+% Output folder where images will be grouped by stress level\
+outputPath = 'stress_dataset';\
+\
+% Emotion \uc0\u8594  Stress mapping\
+stressMap = containers.Map( ...\
+    \{'angry','disgust','fear','sad','neutral','happy','surprise'\}, ...\
+    \{'high_stress','high_stress','medium_stress','medium_stress','medium_stress','low_stress','low_stress'\} );\
+\
+emotions = keys(stressMap);\
+imgCount = 0;\
+\
+% Loop through train/test folders\
+for k = 1:length(inputFolders)\
+    rootPath = inputFolders\{k\};\
+    \
+    for i = 1:length(emotions)\
+        emotion = emotions\{i\};\
+        emotionFolder = fullfile(rootPath, emotion);\
+        \
+        if ~exist(emotionFolder, 'dir')\
+            fprintf('\uc0\u9888 \u65039  Skipping missing folder: %s\\n', emotionFolder);\
+            continue;\
+        end\
+        \
+        % Get all supported image files\
+        files = [ ...\
+            dir(fullfile(emotionFolder, '*.jpg')); ...\
+            dir(fullfile(emotionFolder, '*.jpeg')); ...\
+            dir(fullfile(emotionFolder, '*.png')) ...\
+        ];\
+        \
+        % Destination stress folder\
+        stressLabel = stressMap(emotion);\
+        stressFolder = fullfile(outputPath, stressLabel);\
+        if ~exist(stressFolder, 'dir')\
+            mkdir(stressFolder);\
+        end\
+        \
+        % Copy and rename files\
+        for j = 1:length(files)\
+            src = fullfile(emotionFolder, files(j).name);\
+            [~, ~, ext] = fileparts(files(j).name);\
+            \
+            dst = fullfile(stressFolder, sprintf('%s_img_%05d%s', emotion, imgCount, ext));\
+            copyfile(src, dst);\
+            imgCount = imgCount + 1;\
+        end\
+        \
+        fprintf('Copied %d "%s" images to "%s"\\n', length(files), emotion, stressLabel);\
+    end\
+end\
+\
+disp('All images grouped by stress levels.');\
+\
+
+\fs36 Exact features.m
+\fs20 \
+\
+\pard\tx720\tx1440\tx2160\tx2880\tx3600\tx4320\tx5040\tx5760\tx6480\tx7200\tx7920\tx8640\pardirnatural\partightenfactor0
+\cf0 function [features, labels] = extractFeatures(baseFolder, emotions, stressMap)\
+    totalImages = 0;\
+    for i = 1:length(emotions)\
+        folderPath = fullfile(baseFolder, emotions\{i\});\
+        imgFiles = dir(fullfile(folderPath, '*.jpg'));\
+        totalImages = totalImages + length(imgFiles);\
+    end\
+\
+    % Check sample image for HOG length\
+    imgFilesSample = dir(fullfile(baseFolder, emotions\{1\}, '*.jpg'));\
+    if isempty(imgFilesSample)\
+        error('No images found in %s', fullfile(baseFolder, emotions\{1\}));\
+    end\
+    sampleImgPath = fullfile(baseFolder, emotions\{1\}, imgFilesSample(1).name);\
+    sampleImg = imread(sampleImgPath);\
+    if size(sampleImg,3) == 3\
+        sampleImg = rgb2gray(sampleImg);\
+    end\
+    sampleImg = imresize(sampleImg, [48 48]);\
+    hogFeatureSample = extractHOGFeatures(sampleImg, 'CellSize', [8 8]);\
+    hogLength = length(hogFeatureSample);\
+\
+    features = zeros(totalImages, hogLength);\
+    labels = strings(totalImages,1);\
+\
+    idx = 0;\
+    for i = 1:length(emotions)\
+        emotion = emotions\{i\};\
+        folderPath = fullfile(baseFolder, emotion);\
+        imgFiles = dir(fullfile(folderPath, '*.jpg'));\
+        for j = 1:length(imgFiles)\
+            imgPath = fullfile(folderPath, imgFiles(j).name);\
+            img = imread(imgPath);\
+            if size(img,3) == 3\
+                img = rgb2gray(img);\
+            end\
+            img = imresize(img, [48 48]);\
+            hogFeature = extractHOGFeatures(img, 'CellSize', [8 8]);\
+\
+            idx = idx + 1;\
+            features(idx, :) = hogFeature;\
+            labels(idx) = string(stressMap(emotion));\
+        end\
+    end\
+\
+    % Trim to actual number of images\
+    features = features(1:idx, :);\
+    labels = labels(1:idx);\
+end\
+\
+\pard\tx560\tx1120\tx1680\tx2240\tx2800\tx3360\tx3920\tx4480\tx5040\tx5600\tx6160\tx6720\pardirnatural\partightenfactor0
+
+\fs36 \cf0 Perform Eda.m
+\fs20 \
+\
+\pard\tx720\tx1440\tx2160\tx2880\tx3600\tx4320\tx5040\tx5760\tx6480\tx7200\tx7920\tx8640\pardirnatural\partightenfactor0
+\cf0 function performEDA(featuresTrain, labelsTrain, featuresTest, labelsTest)\
+% Perform Exploratory Data Analysis (EDA) on stress detection data\
+\
+fprintf('Performing Exploratory Data Analysis (EDA)...\\n');\
+\
+% Plot class distribution in training data\
+figure;\
+histogram(categorical(labelsTrain));\
+title('Stress Level Distribution in Training Data');\
+xlabel('Stress Level'); ylabel('Number of Samples');\
+grid on;\
+\
+% Plot class distribution in test data\
+figure;\
+histogram(categorical(labelsTest));\
+title('Stress Level Distribution in Testing Data');\
+xlabel('Stress Level'); ylabel('Number of Samples');\
+grid on;\
+\
+% Mean and variance of features\
+meanFeatures = mean(featuresTrain);\
+varFeatures = var(featuresTrain);\
+\
+% Plot first 20 mean feature values\
+figure;\
+bar(meanFeatures(1:20));\
+title('Mean of First 20 Features (Train Data)');\
+xlabel('Feature Index'); ylabel('Mean Value');\
+\
+% Plot variance of first 20 features\
+figure;\
+bar(varFeatures(1:20));\
+title('Variance of First 20 Features (Train Data)');\
+xlabel('Feature Index'); ylabel('Variance');\
+\
+end\
+\
+
+\fs36 Mainstress.m\
+\
+
+\fs20 % Main Stress Detection Script\
+\
+clear; clc;\
+\
+% Define emotions and stress level mapping\
+emotions = \{'surprise','sad','neutral','happy','fear','disgust','angry'\};\
+stressMap = containers.Map( ...\
+    \{'angry','disgust','fear','happy','sad','surprise','neutral'\}, ...\
+    \{'high_stress','high_stress','medium_stress','low_stress','medium_stress','low_stress','low_stress'\});\
+\
+% Extract features for training\
+trainFolder = fullfile('fer2013', 'train');\
+fprintf('Extracting training features...\\n');\
+[featuresTrain, labelsTrain] = extractFeatures(trainFolder, emotions, stressMap);\
+fprintf('Training samples: %d\\n', size(featuresTrain,1));\
+\
+% Extract features for testing\
+testFolder = fullfile('fer2013', 'test');\
+fprintf('Extracting testing features...\\n');\
+[featuresTest, labelsTest] = extractFeatures(testFolder, emotions, stressMap);\
+fprintf('Testing samples: %d\\n', size(featuresTest,1));\
+\
+% Run EDA\
+performEDA(featuresTrain, labelsTrain, featuresTest, labelsTest);\
+\
+% Classification\
+classes = unique(labelsTrain);\
+numClasses = length(classes);\
+\
+% Calculate centroid of each class\
+centroids = zeros(numClasses, size(featuresTrain, 2));\
+for c = 1:numClasses\
+    centroids(c, :) = mean(featuresTrain(labelsTrain == classes(c), :), 1);\
+end\
+\
+fprintf('Training completed. Starting prediction...\\n');\
+\
+% Predict using nearest centroid\
+predictions = strings(size(featuresTest,1), 1);\
+for i = 1:size(featuresTest,1)\
+    dists = sum((centroids - featuresTest(i, :)).^2, 2);\
+    [~, idx] = min(dists);\
+    predictions(i) = classes(idx);\
+end\
+\
+% Calculate accuracy\
+accuracy = sum(predictions == labelsTest) / numel(labelsTest);\
+fprintf('Stress detection accuracy: %.2f%%\\n', accuracy*100);\
+\
+% Confusion Matrix\
+figure;\
+confusionchart(labelsTest, predictions);\
+title('Confusion Matrix for Stress Detection');\
+\
+\
+\pard\tx560\tx1120\tx1680\tx2240\tx2800\tx3360\tx3920\tx4480\tx5040\tx5600\tx6160\tx6720\pardirnatural\partightenfactor0
+\cf0 \
+\
+}
